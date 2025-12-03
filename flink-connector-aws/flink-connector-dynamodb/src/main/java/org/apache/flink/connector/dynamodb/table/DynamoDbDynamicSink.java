@@ -34,6 +34,7 @@ import org.apache.flink.table.types.DataType;
 import javax.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -49,9 +50,11 @@ public class DynamoDbDynamicSink extends AsyncDynamicTableSink<DynamoDbWriteRequ
     private final String tableName;
     private final boolean failOnError;
     private final boolean ignoreNulls;
+    private final boolean sparseUpdate;
     private final Properties dynamoDbClientProperties;
     private final DataType physicalDataType;
     private final Set<String> overwriteByPartitionKeys;
+    private final List<String> primaryKeyFields;
 
     protected DynamoDbDynamicSink(
             @Nullable Integer maxBatchSize,
@@ -62,9 +65,11 @@ public class DynamoDbDynamicSink extends AsyncDynamicTableSink<DynamoDbWriteRequ
             String tableName,
             boolean failOnError,
             boolean ignoreNulls,
+            boolean sparseUpdate,
             Properties dynamoDbClientProperties,
             DataType physicalDataType,
-            Set<String> overwriteByPartitionKeys) {
+            Set<String> overwriteByPartitionKeys,
+            List<String> primaryKeyFields) {
         super(
                 maxBatchSize,
                 maxInFlightRequests,
@@ -74,9 +79,11 @@ public class DynamoDbDynamicSink extends AsyncDynamicTableSink<DynamoDbWriteRequ
         this.tableName = tableName;
         this.failOnError = failOnError;
         this.ignoreNulls = ignoreNulls;
+        this.sparseUpdate = sparseUpdate;
         this.dynamoDbClientProperties = dynamoDbClientProperties;
         this.physicalDataType = physicalDataType;
         this.overwriteByPartitionKeys = overwriteByPartitionKeys;
+        this.primaryKeyFields = primaryKeyFields;
     }
 
     @Override
@@ -93,7 +100,13 @@ public class DynamoDbDynamicSink extends AsyncDynamicTableSink<DynamoDbWriteRequ
                         .setOverwriteByPartitionKeys(new ArrayList<>(overwriteByPartitionKeys))
                         .setDynamoDbProperties(dynamoDbClientProperties)
                         .setElementConverter(
-                                new RowDataElementConverter(physicalDataType, ignoreNulls));
+                                new RowDataElementConverter(
+                                        physicalDataType,
+                                        ignoreNulls,
+                                        sparseUpdate,
+                                        primaryKeyFields))
+                        .setPrimaryKeyFields(primaryKeyFields)
+                        .setSparseUpdate(sparseUpdate);
 
         addAsyncOptionsToSinkBuilder(builder);
 
@@ -111,9 +124,11 @@ public class DynamoDbDynamicSink extends AsyncDynamicTableSink<DynamoDbWriteRequ
                 tableName,
                 failOnError,
                 ignoreNulls,
+                sparseUpdate,
                 dynamoDbClientProperties,
                 physicalDataType,
-                overwriteByPartitionKeys);
+                overwriteByPartitionKeys,
+                primaryKeyFields);
     }
 
     @Override
@@ -139,9 +154,11 @@ public class DynamoDbDynamicSink extends AsyncDynamicTableSink<DynamoDbWriteRequ
         private String tableName;
         private boolean failOnError;
         private boolean ignoreNulls;
+        private boolean sparseUpdate;
         private Properties dynamoDbClientProperties;
         private DataType physicalDataType;
         private Set<String> overwriteByPartitionKeys;
+        private List<String> primaryKeyFields;
 
         public DynamoDbDynamicTableSinkBuilder setTableName(String tableName) {
             this.tableName = tableName;
@@ -155,6 +172,11 @@ public class DynamoDbDynamicSink extends AsyncDynamicTableSink<DynamoDbWriteRequ
 
         public DynamoDbDynamicTableSinkBuilder setIgnoreNulls(boolean ignoreNulls) {
             this.ignoreNulls = ignoreNulls;
+            return this;
+        }
+
+        public DynamoDbDynamicTableSinkBuilder setSparseUpdate(boolean sparseUpdate) {
+            this.sparseUpdate = sparseUpdate;
             return this;
         }
 
@@ -175,6 +197,11 @@ public class DynamoDbDynamicSink extends AsyncDynamicTableSink<DynamoDbWriteRequ
             return this;
         }
 
+        public DynamoDbDynamicTableSinkBuilder setPrimaryKeyFields(List<String> primaryKeyFields) {
+            this.primaryKeyFields = primaryKeyFields;
+            return this;
+        }
+
         @Override
         public AsyncDynamicTableSink<DynamoDbWriteRequest> build() {
             return new DynamoDbDynamicSink(
@@ -186,9 +213,11 @@ public class DynamoDbDynamicSink extends AsyncDynamicTableSink<DynamoDbWriteRequ
                     tableName,
                     failOnError,
                     ignoreNulls,
+                    sparseUpdate,
                     dynamoDbClientProperties,
                     physicalDataType,
-                    overwriteByPartitionKeys);
+                    overwriteByPartitionKeys,
+                    primaryKeyFields);
         }
     }
 }

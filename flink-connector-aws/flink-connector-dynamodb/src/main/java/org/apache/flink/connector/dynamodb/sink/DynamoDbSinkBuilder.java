@@ -89,12 +89,14 @@ public class DynamoDbSinkBuilder<InputT>
     private static final boolean DEFAULT_FAIL_ON_ERROR = false;
 
     private boolean failOnError;
+    private boolean sparseUpdate;
     private Properties dynamodbClientProperties;
 
     private ElementConverter<InputT, DynamoDbWriteRequest> elementConverter;
     private String tableName;
 
     private List<String> overwriteByPartitionKeys;
+    private List<String> primaryKeyFields;
 
     public DynamoDbSinkBuilder<InputT> setDynamoDbProperties(Properties properties) {
         this.dynamodbClientProperties = properties;
@@ -131,6 +133,16 @@ public class DynamoDbSinkBuilder<InputT>
         return this;
     }
 
+    public DynamoDbSinkBuilder<InputT> setSparseUpdate(boolean sparseUpdate) {
+        this.sparseUpdate = sparseUpdate;
+        return this;
+    }
+
+    public DynamoDbSinkBuilder<InputT> setPrimaryKeyFields(List<String> primaryKeyFields) {
+        this.primaryKeyFields = primaryKeyFields;
+        return this;
+    }
+
     @Override
     public DynamoDbSinkBuilder<InputT> setMaxBatchSizeInBytes(long maxBatchSizeInBytes) {
         throw new InvalidConfigurationException(
@@ -156,8 +168,10 @@ public class DynamoDbSinkBuilder<InputT>
                 Optional.ofNullable(getMaxTimeInBufferMS()).orElse(DEFAULT_MAX_TIME_IN_BUFFER_MS),
                 Optional.ofNullable(getMaxRecordSizeInBytes()).orElse(DEFAULT_MAX_RECORD_SIZE_IN_B),
                 Optional.of(failOnError).orElse(DEFAULT_FAIL_ON_ERROR),
+                sparseUpdate,
                 tableName,
                 Optional.ofNullable(overwriteByPartitionKeys).orElse(new ArrayList<>()),
+                Optional.ofNullable(primaryKeyFields).orElse(new ArrayList<>()),
                 Optional.ofNullable(dynamodbClientProperties).orElse(new Properties()));
     }
 }

@@ -82,8 +82,10 @@ public class DynamoDbSink<InputT> extends AsyncSinkBase<InputT, DynamoDbWriteReq
 
     private final Properties dynamoDbClientProperties;
     private final boolean failOnError;
+    private final boolean sparseUpdate;
     private final String tableName;
     private final List<String> overwriteByPartitionKeys;
+    private final List<String> primaryKeyFields;
     private transient SdkClientProvider<DynamoDbAsyncClient> asyncClientSdkClientProviderOverride;
 
     protected DynamoDbSink(
@@ -95,8 +97,10 @@ public class DynamoDbSink<InputT> extends AsyncSinkBase<InputT, DynamoDbWriteReq
             long maxTimeInBufferMS,
             long maxRecordSizeInBytes,
             boolean failOnError,
+            boolean sparseUpdate,
             String tableName,
             List<String> overwriteByPartitionKeys,
+            List<String> primaryKeyFields,
             Properties dynamoDbClientProperties) {
         super(
                 elementConverter,
@@ -117,8 +121,10 @@ public class DynamoDbSink<InputT> extends AsyncSinkBase<InputT, DynamoDbWriteReq
                 "DynamoDB client supports only up to 25 elements in the batch.");
         checkNotNull(dynamoDbClientProperties, "DynamoDB client properties must be set.");
         this.failOnError = failOnError;
+        this.sparseUpdate = sparseUpdate;
         this.tableName = tableName;
         this.overwriteByPartitionKeys = overwriteByPartitionKeys;
+        this.primaryKeyFields = primaryKeyFields;
         this.dynamoDbClientProperties = dynamoDbClientProperties;
     }
 
@@ -155,8 +161,10 @@ public class DynamoDbSink<InputT> extends AsyncSinkBase<InputT, DynamoDbWriteReq
                 getMaxTimeInBufferMS(),
                 getMaxRecordSizeInBytes(),
                 failOnError,
+                sparseUpdate,
                 tableName,
                 overwriteByPartitionKeys,
+                primaryKeyFields,
                 getAsyncClientProvider(dynamoDbClientProperties),
                 recoveredState);
     }

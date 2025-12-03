@@ -35,6 +35,7 @@ import org.apache.flink.util.CollectionUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
@@ -42,6 +43,8 @@ import software.amazon.awssdk.services.dynamodb.model.DeleteRequest;
 import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
 import software.amazon.awssdk.services.dynamodb.model.PutRequest;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.UpdateItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 import java.util.ArrayList;
@@ -119,9 +122,11 @@ class DynamoDbSinkWriter<InputT> extends AsyncSinkWriter<InputT, DynamoDbWriteRe
 
     private final SdkClientProvider<DynamoDbAsyncClient> clientProvider;
     private final boolean failOnError;
+    private final boolean sparseUpdate;
     private final String tableName;
 
     private final List<String> overwriteByPartitionKeys;
+    private final List<String> primaryKeyFields;
 
     public DynamoDbSinkWriter(
             ElementConverter<InputT, DynamoDbWriteRequest> elementConverter,
@@ -133,8 +138,10 @@ class DynamoDbSinkWriter<InputT> extends AsyncSinkWriter<InputT, DynamoDbWriteRe
             long maxTimeInBufferMS,
             long maxRecordSizeInBytes,
             boolean failOnError,
+            boolean sparseUpdate,
             String tableName,
             List<String> overwriteByPartitionKeys,
+            List<String> primaryKeyFields,
             SdkClientProvider<DynamoDbAsyncClient> clientProvider,
             Collection<BufferedRequestState<DynamoDbWriteRequest>> states) {
         super(
@@ -148,8 +155,10 @@ class DynamoDbSinkWriter<InputT> extends AsyncSinkWriter<InputT, DynamoDbWriteRe
                 maxRecordSizeInBytes,
                 states);
         this.failOnError = failOnError;
+        this.sparseUpdate = sparseUpdate;
         this.tableName = tableName;
         this.overwriteByPartitionKeys = overwriteByPartitionKeys;
+        this.primaryKeyFields = primaryKeyFields;
         this.metrics = context.metricGroup();
         this.numRecordsSendErrorsCounter = metrics.getNumRecordsSendErrorsCounter();
         this.numRecordsSendPartialFailure = metrics.counter("numRecordsSendPartialFailure");
@@ -158,6 +167,136 @@ class DynamoDbSinkWriter<InputT> extends AsyncSinkWriter<InputT, DynamoDbWriteRe
 
     @Override
     protected void submitRequestEntries(
+            List<DynamoDbWriteRequest> requestEntries,
+            ResultHandler<DynamoDbWriteRequest> resultHandler) {
+
+        // Separate UPDATE requests from batch write requests
+        List<DynamoDbWriteRequest> updateRequests = new ArrayList<>();
+        List<DynamoDbWriteRequest> batchWriteRequests = new ArrayList<>();
+
+        for (DynamoDbWriteRequest request : requestEntries) {
+            if (request.getType() == DynamoDbWriteRequestType.UPDATE) {
+                updateRequests.add(request);
+            } else {
+                batchWriteRequests.add(request);
+            }
+        }
+
+        // Handle UPDATE requests individually using UpdateItem API
+        if (!updateRequests.isEmpty()) {
+            submitUpdateRequests(updateRequests, resultHandler);
+        }
+
+        // Handle batch write requests (PUT and DELETE) using BatchWriteItem API
+        if (!batchWriteRequests.isEmpty()) {
+            submitBatchWriteRequests(batchWriteRequests, resultHandler);
+        }
+
+        // If both lists are empty, complete immediately
+        if (updateRequests.isEmpty() && batchWriteRequests.isEmpty()) {
+            resultHandler.complete();
+        }
+    }
+
+    private void submitUpdateRequests(
+            List<DynamoDbWriteRequest> updateRequests,
+            ResultHandler<DynamoDbWriteRequest> resultHandler) {
+
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
+        for (DynamoDbWriteRequest request : updateRequests) {
+            CompletableFuture<Void> future = submitSingleUpdateRequest(request, resultHandler);
+            futures.add(future);
+        }
+
+        // Wait for all update requests to complete
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                .whenComplete(
+                        (v, err) -> {
+                            if (err == null) {
+                                resultHandler.complete();
+                            }
+                        });
+    }
+
+    private CompletableFuture<Void> submitSingleUpdateRequest(
+            DynamoDbWriteRequest request, ResultHandler<DynamoDbWriteRequest> resultHandler) {
+
+        Map<String, AttributeValue> item = request.getItem();
+
+        // Use primaryKeyFields from the request to extract the DynamoDB primary key
+        List<String> keyFieldsToUse = request.getPrimaryKeyFields();
+        if (keyFieldsToUse == null || keyFieldsToUse.isEmpty()) {
+            // Fallback to primaryKeyFields from constructor for backward compatibility
+            keyFieldsToUse = primaryKeyFields;
+        }
+
+        // Extract key attributes
+        Map<String, AttributeValue> key = new HashMap<>();
+        Map<String, AttributeValue> updateAttributes = new HashMap<>();
+
+        LOG.info("Processing UPDATE request for table: {}", tableName);
+        LOG.info("Primary key fields from schema: {}", keyFieldsToUse);
+        LOG.info("All item attributes: {}", item.keySet());
+
+        for (Map.Entry<String, AttributeValue> entry : item.entrySet()) {
+            if (keyFieldsToUse != null && keyFieldsToUse.contains(entry.getKey())) {
+                key.put(entry.getKey(), entry.getValue());
+            } else {
+                updateAttributes.put(entry.getKey(), entry.getValue());
+            }
+        }
+
+        LOG.info("Extracted key attributes: {}", key);
+
+        // Build UpdateExpression
+        StringBuilder updateExpression = new StringBuilder("SET ");
+        Map<String, String> expressionAttributeNames = new HashMap<>();
+        Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
+
+        int index = 0;
+        for (Map.Entry<String, AttributeValue> entry : updateAttributes.entrySet()) {
+            if (index > 0) {
+                updateExpression.append(", ");
+            }
+            String placeholder = "#attr" + index;
+            String valuePlaceholder = ":val" + index;
+
+            expressionAttributeNames.put(placeholder, entry.getKey());
+            expressionAttributeValues.put(valuePlaceholder, entry.getValue());
+
+            updateExpression.append(placeholder).append(" = ").append(valuePlaceholder);
+            index++;
+        }
+
+        UpdateItemRequest.Builder updateRequestBuilder =
+                UpdateItemRequest.builder().tableName(tableName).key(key);
+
+        if (!updateAttributes.isEmpty()) {
+            updateRequestBuilder
+                    .updateExpression(updateExpression.toString())
+                    .expressionAttributeNames(expressionAttributeNames)
+                    .expressionAttributeValues(expressionAttributeValues);
+        }
+
+        CompletableFuture<UpdateItemResponse> updateFuture =
+                clientProvider.getClient().updateItem(updateRequestBuilder.build());
+
+        return updateFuture.handle(
+                (response, err) -> {
+                    if (err != null) {
+                        LOG.warn("DynamoDB UpdateItem failed, will retry.", err);
+                        numRecordsSendErrorsCounter.inc();
+
+                        if (isRetryable(err.getCause(), resultHandler)) {
+                            resultHandler.retryForEntries(List.of(request));
+                        }
+                    }
+                    return null;
+                });
+    }
+
+    private void submitBatchWriteRequests(
             List<DynamoDbWriteRequest> requestEntries,
             ResultHandler<DynamoDbWriteRequest> resultHandler) {
 

@@ -24,6 +24,7 @@ import org.apache.flink.util.Preconditions;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.io.Serializable;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -37,10 +38,15 @@ public class DynamoDbWriteRequest implements Serializable {
 
     private final Map<String, AttributeValue> item;
     private final DynamoDbWriteRequestType type;
+    private final List<String> primaryKeyFields;
 
-    private DynamoDbWriteRequest(Map<String, AttributeValue> item, DynamoDbWriteRequestType type) {
+    private DynamoDbWriteRequest(
+            Map<String, AttributeValue> item,
+            DynamoDbWriteRequestType type,
+            List<String> primaryKeyFields) {
         this.item = item;
         this.type = type;
+        this.primaryKeyFields = primaryKeyFields;
     }
 
     public Map<String, AttributeValue> getItem() {
@@ -51,19 +57,31 @@ public class DynamoDbWriteRequest implements Serializable {
         return type;
     }
 
+    public List<String> getPrimaryKeyFields() {
+        return primaryKeyFields;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
 
     @Override
     public String toString() {
-        return "DynamoDbWriteRequest{" + "item=" + item + ", type=" + type + '}';
+        return "DynamoDbWriteRequest{"
+                + "item="
+                + item
+                + ", type="
+                + type
+                + ", primaryKeyFields="
+                + primaryKeyFields
+                + '}';
     }
 
     /** Builder for DynamoDbWriteRequest. */
     public static class Builder {
         private Map<String, AttributeValue> item;
         private DynamoDbWriteRequestType type;
+        private List<String> primaryKeyFields;
 
         public Builder setItem(Map<String, AttributeValue> item) {
             this.item = item;
@@ -75,12 +93,17 @@ public class DynamoDbWriteRequest implements Serializable {
             return this;
         }
 
+        public Builder setPrimaryKeyFields(List<String> primaryKeyFields) {
+            this.primaryKeyFields = primaryKeyFields;
+            return this;
+        }
+
         public DynamoDbWriteRequest build() {
             Preconditions.checkNotNull(
                     item, "No Item was supplied to the " + "DynamoDbWriteRequest builder.");
             Preconditions.checkNotNull(
                     type, "No type was supplied to the " + "DynamoDbWriteRequest builder.");
-            return new DynamoDbWriteRequest(item, type);
+            return new DynamoDbWriteRequest(item, type, primaryKeyFields);
         }
     }
 }

@@ -53,6 +53,13 @@ public class DynamoDbConnectorOptions {
                     .withDescription(
                             "Determines whether null values should be ignored in the sink. If set to true, null values are excluded from processing.");
 
+    public static final ConfigOption<Boolean> SPARSE_UPDATE =
+            ConfigOptions.key("sink.sparse-update")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "When enabled, uses UpdateItem API for INSERT operations instead of batch write. For INSERT OVERWRITE or when false, uses existing batch write endpoint.");
+
     private DynamoDbConnectorOptions() {
         // private constructor to prevent initialization of static class
     }

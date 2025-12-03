@@ -370,8 +370,10 @@ public class DynamoDbSinkWriterTest {
                         1000,
                         1024,
                         failOnError,
+                        false,
                         TABLE_NAME,
                         overwriteByPartitionKeys,
+                        Collections.emptyList(), // primaryKeyFields
                         new Properties());
         sink.setDynamoDbAsyncClientProvider(dynamoDbAsyncClientProvider);
         return (DynamoDbSinkWriter<Map<String, AttributeValue>>) sink.createWriter(initContext);

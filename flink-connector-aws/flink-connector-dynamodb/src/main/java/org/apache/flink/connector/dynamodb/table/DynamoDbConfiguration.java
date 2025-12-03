@@ -28,6 +28,7 @@ import java.util.Properties;
 
 import static org.apache.flink.connector.dynamodb.table.DynamoDbConnectorOptions.FAIL_ON_ERROR;
 import static org.apache.flink.connector.dynamodb.table.DynamoDbConnectorOptions.IGNORE_NULLS;
+import static org.apache.flink.connector.dynamodb.table.DynamoDbConnectorOptions.SPARSE_UPDATE;
 import static org.apache.flink.connector.dynamodb.table.DynamoDbConnectorOptions.TABLE_NAME;
 
 /** DynamoDb specific configuration. */
@@ -56,6 +57,10 @@ public class DynamoDbConfiguration {
 
     public boolean getIgnoreNulls() {
         return tableOptions.get(IGNORE_NULLS);
+    }
+
+    public boolean getSparseUpdate() {
+        return tableOptions.get(SPARSE_UPDATE);
     }
 
     public Properties getAsyncSinkProperties() {

@@ -27,6 +27,8 @@ import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.DataType;
 
+import java.util.List;
+
 /**
  * Implementation of an {@link ElementConverter} for the DynamoDb Table sink. The element converter
  * maps the Flink internal type of {@link RowData} to a {@link DynamoDbWriteRequest} to be used by
@@ -36,18 +38,33 @@ import org.apache.flink.table.types.DataType;
 public class RowDataElementConverter implements ElementConverter<RowData, DynamoDbWriteRequest> {
 
     private boolean ignoreNulls = false;
+    private boolean sparseUpdate = false;
     private final DataType physicalDataType;
+    private final List<String> primaryKeyFields;
     private transient RowDataToAttributeValueConverter rowDataToAttributeValueConverter;
 
     public RowDataElementConverter(DataType physicalDataType) {
-        this.physicalDataType = physicalDataType;
-        this.rowDataToAttributeValueConverter =
-                new RowDataToAttributeValueConverter(physicalDataType);
+        this(physicalDataType, false, false, null);
     }
 
     public RowDataElementConverter(DataType physicalDataType, boolean ignoreNulls) {
+        this(physicalDataType, ignoreNulls, false, null);
+    }
+
+    public RowDataElementConverter(
+            DataType physicalDataType, boolean ignoreNulls, boolean sparseUpdate) {
+        this(physicalDataType, ignoreNulls, sparseUpdate, null);
+    }
+
+    public RowDataElementConverter(
+            DataType physicalDataType,
+            boolean ignoreNulls,
+            boolean sparseUpdate,
+            List<String> primaryKeyFields) {
         this.ignoreNulls = ignoreNulls;
+        this.sparseUpdate = sparseUpdate;
         this.physicalDataType = physicalDataType;
+        this.primaryKeyFields = primaryKeyFields;
         this.rowDataToAttributeValueConverter =
                 new RowDataToAttributeValueConverter(physicalDataType, ignoreNulls);
     }
@@ -61,10 +78,17 @@ public class RowDataElementConverter implements ElementConverter<RowData, Dynamo
 
         DynamoDbWriteRequest.Builder builder =
                 DynamoDbWriteRequest.builder()
-                        .setItem(rowDataToAttributeValueConverter.convertRowData(element));
+                        .setItem(rowDataToAttributeValueConverter.convertRowData(element))
+                        .setPrimaryKeyFields(primaryKeyFields);
 
         switch (element.getRowKind()) {
             case INSERT:
+                if (sparseUpdate) {
+                    builder.setType(DynamoDbWriteRequestType.UPDATE);
+                } else {
+                    builder.setType(DynamoDbWriteRequestType.PUT);
+                }
+                break;
             case UPDATE_AFTER:
                 builder.setType(DynamoDbWriteRequestType.PUT);
                 break;

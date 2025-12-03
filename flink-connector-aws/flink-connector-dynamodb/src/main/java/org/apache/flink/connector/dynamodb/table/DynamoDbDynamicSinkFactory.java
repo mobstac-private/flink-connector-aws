@@ -25,7 +25,9 @@ import org.apache.flink.table.catalog.ResolvedCatalogTable;
 import org.apache.flink.table.connector.sink.DynamicTableSink;
 import org.apache.flink.table.factories.FactoryUtil;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import static org.apache.flink.connector.dynamodb.table.DynamoDbConnectorOptions.AWS_REGION;
@@ -48,14 +50,23 @@ public class DynamoDbDynamicSinkFactory extends AsyncDynamicTableSinkFactory {
         DynamoDbConfiguration dynamoDbConfiguration =
                 new DynamoDbConfiguration(catalogTable.getOptions(), factoryHelper.getOptions());
 
+        // Extract primary key fields from the table schema
+        List<String> primaryKeyFields = new ArrayList<>();
+        if (catalogTable.getResolvedSchema().getPrimaryKey().isPresent()) {
+            primaryKeyFields.addAll(
+                    catalogTable.getResolvedSchema().getPrimaryKey().get().getColumns());
+        }
+
         DynamoDbDynamicSink.DynamoDbDynamicTableSinkBuilder builder =
                 DynamoDbDynamicSink.builder()
                         .setTableName(dynamoDbConfiguration.getTableName())
                         .setFailOnError(dynamoDbConfiguration.getFailOnError())
                         .setIgnoreNulls(dynamoDbConfiguration.getIgnoreNulls())
+                        .setSparseUpdate(dynamoDbConfiguration.getSparseUpdate())
                         .setPhysicalDataType(
                                 catalogTable.getResolvedSchema().toPhysicalRowDataType())
                         .setOverwriteByPartitionKeys(new HashSet<>(catalogTable.getPartitionKeys()))
+                        .setPrimaryKeyFields(primaryKeyFields)
                         .setDynamoDbClientProperties(
                                 dynamoDbConfiguration.getSinkClientProperties());
 

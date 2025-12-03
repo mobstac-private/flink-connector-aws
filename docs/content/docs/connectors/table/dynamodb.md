@@ -243,6 +243,13 @@ Connector Options
       <td>Boolean</td>
       <td>Determines whether null values should be ignored in the sink. If set to true, null values are excluded from processing.</td>
     </tr>
+    <tr>
+      <td><h5>sink.sparse-update</h5></td>
+      <td>optional</td>
+      <td style="word-wrap: break-word;">false</td>
+      <td>Boolean</td>
+      <td>Determines whether to do partial upsert for `INSERT INTO` operations. If false is set, sparse updates will nullify the existing fields.</td>
+    </tr>
     </tbody>
     <thead>
     <tr>
